@@ -1,8 +1,5 @@
 import hashlib
-import random
-import string
 import logging
-
 from services.DbService import DbService
 from services.MailService import MailService
 
@@ -12,11 +9,9 @@ class UserService:
         self.mail_service = MailService()
         self.class_name = __class__.__name__
 
-    def generate_random_password(self):
-        characters = string.ascii_letters + string.digits 
-        password = "".join(random.choice(characters) for i in range(8))
+    def generate_hashed_password(self, password):
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        return password, hashed_password
+        return hashed_password
 
     def check_user_id(self, user_id):
         try:
@@ -28,13 +23,13 @@ class UserService:
             logging.error(error_message)
             return False
 
-    def insert_user_info(self, full_name, email, phone_number, city, state):
+    def insert_user_info(self, full_name, email, phone_number, password):
         try:
-            password, hashed_password = self.generate_random_password()
+            hashed_password = self.generate_hashed_password(password)
             self.mail_service.send_email(full_name, password, email, "hi saurabh")
-            query = """INSERT INTO [User] (FirstName, Email, Password, Phone, City, State) VALUES (?, ?, ?, ?, ?, ?)"""
+            query = """INSERT INTO [User] (Name, Email, Password, PhoneNumber) VALUES (?, ?, ?, ?)"""
 
-            success, message = self.db.insert(query, (full_name, email, hashed_password, phone_number, city, state))
+            success, message = self.db.insert(query, (full_name, email, hashed_password, phone_number))
             if success:
                 return True, "Data inserted successfully"
             else:
@@ -55,9 +50,7 @@ class UserService:
                             State = COALESCE(?, State),
                             ModifyDate = GETDATE() 
                         WHERE UserId = ?"""
-            success, message = self.db.execute(
-                query, (full_name, email, phone_number, city, state, user_id)
-            )
+            success, message = self.db.execute(query, (full_name, email, phone_number, city, state, user_id))
             if success:
                 return True, "Data updated successfully"
             else:
@@ -109,3 +102,13 @@ class UserService:
             error_message = "An error occurred while user login time: {}".format( str(e))
             logging.error(error_message)
             return False, error_message
+
+    def reset_password(self, user_id, old_password, new_password):
+        try:
+            query = "UPDATE [dbo].[User] SET Password = ? WHERE UserId = ? AND Password = ? AND IsActive = 1"
+            row = self.db.execute(query, (new_password, user_id, old_password))
+            return row.rowcount > 0
+        except Exception as e:
+            error_message = "An error occurred while updating the user's password: {}".format(str(e))
+            logging.error(error_message)
+            return False
